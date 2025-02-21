@@ -202,8 +202,8 @@ public:
 	//给线程池提交任务
 	Result submitTask(std::shared_ptr<Task> sp);
 
-	//开启线程池,大小默认为4
-	void start(int initThreadSize = 4);
+	//开启线程池,初始线程数量设置为当前cpu的核心数量
+	void start(int initThreadSize = std::thread::hardware_concurrency());
 
 	//禁止拷贝构造
 	//原因：成员变量复杂，若允许拷贝构造新对象，容易造成两个对象中的数据指向同一块内存的情况

@@ -24,10 +24,11 @@ ThreadPool::ThreadPool()
 ThreadPool::~ThreadPool()
 {
 	isPoolRunning_ = false;
-	notEmpty_.notify_all();
+	//修改通知时间、当pool线程获取锁后再通知notEmpty_.notify_all();
 
 	//等待线程池里所有的线程返回
 	std::unique_lock<std::mutex> lock(taskQueMtx_);
+	notEmpty_.notify_all();
 	exitCond_.wait(lock, [&]()->bool {return threads_.size() == 0; });
 }
 
@@ -148,7 +149,9 @@ void ThreadPool::threadFunc(int threadid)
 {
 	auto lastTime = std::chrono::high_resolution_clock().now();
 
-	while(isPoolRunning_)
+	//所有任务必须执行完成，线程池才可以回收所有线程资源
+	//while(isPoolRunning_)
+	for(;;)
 	{
 		std::shared_ptr<Task> task;
 		{
@@ -162,6 +165,18 @@ void ThreadPool::threadFunc(int threadid)
 			//超过initThreadSize_数量的线程要进行回收
 			while (taskQue_.size() == 0)
 			{
+				if (!isPoolRunning_)
+				{
+					threads_.erase(threadid);
+					//curThreadSize_--;
+					//idleThreadSize_--;
+
+					std::cout << "threadid:" << std::this_thread::get_id() << "exit!"
+						<< std::endl;
+					exitCond_.notify_all();
+					return;		//线程函数结束，线程结束
+				}
+
 				if (poolMode_ == PoolMode::MODE_CACHED)
 				{
 					//条件变量超时返回了
@@ -191,17 +206,20 @@ void ThreadPool::threadFunc(int threadid)
 				}
 
 				//线程池要结束，回收线程资源
-				if (!isPoolRunning_)
-				{
-					threads_.erase(threadid);	//这个id与系统给线程设置的id不同
-					//curThreadSize_--;
-					//idleThreadSize_--;
+				//if (!isPoolRunning_)
+				//{
+				//	threads_.erase(threadid);	//这个id与系统给线程设置的id不同
+				//	//curThreadSize_--;
+				//	//idleThreadSize_--;
 
-					std::cout << "threadid:" << std::this_thread::get_id() << "exit!" << std::endl;
-					exitCond_.notify_all();
-					return;
-				}
+				//	std::cout << "threadid:" << std::this_thread::get_id() << "exit!" << std::endl;
+				//	exitCond_.notify_all();
+				//	return;
+				//}
 			}
+			
+			if (!isPoolRunning_)
+				break;
 
 
 			idleThreadSize_--;
@@ -234,14 +252,6 @@ void ThreadPool::threadFunc(int threadid)
 		lastTime = std::chrono::high_resolution_clock().now();	//更新线程执行完任务的时间
 		idleThreadSize_++;
 	}
-
-	threads_.erase(threadid);	
-	//curThreadSize_--;
-	//idleThreadSize_--;
-
-	std::cout << "threadid:" << std::this_thread::get_id() << "exit!" 
-		<< std::endl;	
-	exitCond_.notify_all();
 }
 
 
